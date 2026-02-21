@@ -29,6 +29,20 @@ registers:
   - pub_topic: "no_export/partial/limit"
     set_topic: "no_export/partial/limit/set"
     address: 13073
+  - pub_topic: "export/power_limit_enabled"
+    set_topic: "export/power_limit_enabled/set"
+    address: 13086
+    value_map:
+      enable: 0xAA
+      disable: 0x55
+  - pub_topic: "export/discharge_power_limit_value"
+    set_topic: "export/discharge_power_limit_value/set"
+    address: 33147
+    scale: 10
+  - pub_topic: "export/power_limit_value"
+    set_topic: "export/power_limit_value/set"
+    address: 31221
+    scale: 10
   # - pub_topic: "forced_charge/mode"
   #   set_topic: "forced_charge/mode/set"
   #   retain: true
@@ -214,35 +228,35 @@ registers:
     pub_only_on_change: false
     scale: 0.1
 
-  # - pub_topic: "solar"
-  #   json_key: pv3_voltage
-  #   type: uint16
-  #   address: 13118
-  #   table: input
-  #   pub_only_on_change: false
-  #   scale: 0.1
-  # - pub_topic: "solar"
-  #   json_key: pv3_current
-  #   type: uint16
-  #   address: 13119
-  #   table: input
-  #   pub_only_on_change: false
-  #   scale: 0.1
+#  - pub_topic: "solar"
+#    json_key: pv3_voltage
+#    type: uint16
+#    address: 5014
+#    table: input
+#    pub_only_on_change: false
+#    scale: 0.1
+#  - pub_topic: "solar"
+#    json_key: pv3_current
+#    type: uint16
+#    address: 5015
+#    table: input
+#    pub_only_on_change: false
+#    scale: 0.1
 
-  # - pub_topic: "solar"
-  #   json_key: pv4_voltage
-  #   type: uint16
-  #   address: 13120
-  #   table: input
-  #   pub_only_on_change: false
-  #   scale: 0.1
-  # - pub_topic: "solar"
-  #   json_key: pv4_current
-  #   type: uint16
-  #   address: 13121
-  #   table: input
-  #   pub_only_on_change: false
-  #   scale: 0.1
+#  - pub_topic: "solar"
+#    json_key: pv4_voltage
+#    type: uint16
+#    address: 5115
+#    table: input
+#    pub_only_on_change: false
+#    scale: 0.1
+#  - pub_topic: "solar"
+#    json_key: pv4_current
+#    type: uint16
+#    address: 5115
+#    table: input
+#    pub_only_on_change: false
+#    scale: 0.1
 
   - pub_topic: "solar"
     json_key: total_pv_power
