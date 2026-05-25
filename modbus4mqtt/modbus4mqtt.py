@@ -65,7 +65,9 @@ class mqtt_interface():
             sleep(self.modbus_reconnect_sleep_interval)
         # Tells the modbus interface about the registers we consider interesting.
         for register in self.registers:
-            self._mb.add_monitor_register(register.get('table', 'holding'), register['address'], register.get('type', 'uint16'))
+            monitor = register.get('monitor', True)
+            if monitor:
+                self._mb.add_monitor_register(register.get('table', 'holding'), register['address'], register.get('type', 'uint16'))
             register['value'] = None
 
     def modbus_connection_failed(self):
