@@ -78,7 +78,14 @@ class ModbusTable:
 
     def set_value(self, addr: int, value: int, mask: int = 0xFFFF, write: bool = False):
         if addr not in self._registers:
-            raise ValueError("Address {} not in monitored registers.".format(addr))
+            if not write:
+                raise ValueError("Address {} not in monitored registers.".format(addr))
+            # CG-style PLCs use disjoint address spaces for reads and writes,
+            # so write targets will not appear in the polled register table.
+            # Track the address on first write so the batching/write pipeline
+            # downstream can flush it.
+            self._registers[addr] = 0
+            self._stale = True
         if value < 0 or value > 0xFFFF:
             raise ValueError("Value {} out of range for modbus register.".format(value))
         new_value = self._registers[addr] & (~mask) | (value & mask)
