@@ -112,6 +112,20 @@ class modbus_interface:
             desired_framer = "socket"
         framer = framers[desired_framer]
 
+        # Close any existing client before opening a new one. pymodbus's
+        # ModbusTcpClient does not close its socket via __del__, so
+        # re-binding self._mb on a reconnect without closing first leaks
+        # the old TCP connection. Some PLCs (Beckhoff CG-line in
+        # particular) have tiny TCP slot tables and end up holding the
+        # old half-open sockets in CLOSE_WAIT until their own keepalive
+        # times out, wedging the Modbus stack in the meantime.
+        prev = getattr(self, "_mb", None)
+        if prev is not None:
+            try:
+                prev.close()
+            except Exception:
+                pass
+
         self._mb = client(
             host=self._ip, port=self._port, framer=framer, retries=3, timeout=1
         )
