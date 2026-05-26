@@ -66,7 +66,7 @@ class mqtt_interface:
             register["address"] += self.address_offset
         self.modbus_connect_retries = -1  # Retry forever by default
         self.modbus_reconnect_sleep_interval = (
-            5  # Wait this many seconds between modbus connection attempts
+            30  # Wait this many seconds between modbus connection attempts
         )
         self.modbus_connection_status: ModbusConnectionStatus = (
             ModbusConnectionStatus.Offline
@@ -186,6 +186,7 @@ class mqtt_interface:
                 "Failed to poll modbus device, attempting to reconnect: {}".format(e)
             )
             self.set_modbus_connection_status(ModbusConnectionStatus.Offline)
+            sleep(self.modbus_reconnect_sleep_interval)
             self.connect_modbus()
             return
 
