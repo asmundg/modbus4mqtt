@@ -2,6 +2,11 @@ class ModbusTable:
 
     def __init__(self, read_batch_size: int = 100, write_batch_size: int = 0):
         self._registers: dict[int, int] = {}
+        # Subset of self._registers that we actually poll. Write-only
+        # addresses (e.g. CG-style controllers with disjoint read/write
+        # address spaces) land in self._registers via set_value but must
+        # NOT be polled, or the read will time out and poison the client.
+        self._monitored: set[int] = set()
         # This flag is cleared when the register list is sorted
         # and the batching is calculated.
         self._batches: list[tuple[int, int]] = []
@@ -17,6 +22,7 @@ class ModbusTable:
 
     def add_register(self, addr: int):
         self._registers[addr] = 0
+        self._monitored.add(addr)
         self._stale = True
 
     def sort(self):
@@ -55,8 +61,12 @@ class ModbusTable:
         else:
             max_batch_size = self._read_batch_size
         for addr in self._registers:
-            if write_mode and addr not in self._changed_registers:
-                continue
+            if write_mode:
+                if addr not in self._changed_registers:
+                    continue
+            else:
+                if addr not in self._monitored:
+                    continue
             if current_batch_size >= max_batch_size or (
                 previous_addr is not None and addr != previous_addr + 1
             ):

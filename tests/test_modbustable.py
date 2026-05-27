@@ -81,3 +81,19 @@ def test_generate_batched_addresses_max_batch_write_mode():
     batches = table.get_batched_addresses(write_mode=True)
     # Should batch: [2] (start=2, len=1), [4] (start=4, len=1)
     assert batches == [(2, 1), (4, 1)]
+
+
+def test_write_only_address_not_polled():
+    # CG-style PLCs use disjoint read/write address spaces. A write to an
+    # address that was never registered for monitoring (set_topic only, with
+    # monitor: false) must be tracked for the next write flush but must NOT
+    # be added to the polled read batches.
+    table = ModbusTable(8)
+    for addr in [1, 2, 3]:
+        table.add_register(addr)
+    # Simulate an MQTT-driven write to a non-monitored address.
+    table.set_value(99, 1, write=True)
+    read_batches = table.get_batched_addresses()
+    write_batches = table.get_batched_addresses(write_mode=True)
+    assert read_batches == [(1, 3)], "write-only address must not poison read batches"
+    assert write_batches == [(99, 1)]
