@@ -158,7 +158,17 @@ class modbus_interface:
                             start + offset, value, write=False
                         )
                 except ModbusException as e:
-                    if "Failed to connect" in str(e):
+                    msg = str(e)
+                    # pymodbus declares the underlying connection dead via
+                    # these messages but does NOT actually close the socket
+                    # nor surface the failure beyond a log line. Re-raise so
+                    # the caller can fully reconnect; otherwise we sit on a
+                    # zombie ESTAB socket forever, logging once per poll.
+                    if (
+                        "Failed to connect" in msg
+                        or "CLOSING CONNECTION" in msg
+                        or "No response received" in msg
+                    ):
                         raise e
                     logging.error(e)
         self._process_writes()
