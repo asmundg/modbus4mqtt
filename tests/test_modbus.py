@@ -667,3 +667,68 @@ class ModbusTests(unittest.TestCase):
             self.assertEqual(m.get_value("holding", 1, "uint64"), 18446573203856197441)
             # Read the value out as a different type.
             self.assertEqual(m.get_value("holding", 1, "int64"), -170869853354175)
+
+
+class ModbusThreadSafetyTests(unittest.TestCase):
+    """pymodbus 3.x's transaction layer is single-threaded. The MQTT
+    callback thread can call set_value() while the main loop is in poll().
+    Without serialization, the responses interleave and the connection is
+    permanently desynced. Verify that reads and writes never overlap."""
+
+    def test_concurrent_read_and_write_serialize(self):
+        import threading
+        import time
+
+        modbus_interface.DEFAULT_READ_BATCHING = 4
+        mi = modbus_interface.modbus_interface("localhost", 502, 0.1)
+        mi._tables["holding"].add_register(0)
+        mi._tables["holding"].add_register(1)
+        mi._tables["holding"].sort()
+
+        in_flight = {"count": 0, "race": False}
+        in_flight_lock = threading.Lock()
+
+        def hold(*args, **kwargs):
+            with in_flight_lock:
+                in_flight["count"] += 1
+                if in_flight["count"] > 1:
+                    in_flight["race"] = True
+            time.sleep(0.01)
+            with in_flight_lock:
+                in_flight["count"] -= 1
+            class R:
+                registers = [0, 0]
+                def isError(self): return False
+            return R()
+
+        mi._mb = Mock()
+        mi._mb.read_holding_registers = Mock(side_effect=hold)
+        mi._mb.write_register = Mock(side_effect=hold)
+
+        stop = threading.Event()
+
+        def reader():
+            while not stop.is_set():
+                try:
+                    mi._scan_value_range("holding", 0, 2)
+                except Exception:
+                    pass
+
+        def writer():
+            while not stop.is_set():
+                try:
+                    mi._perform_write(0, [42])
+                except Exception:
+                    pass
+
+        threads = [threading.Thread(target=reader) for _ in range(3)] + \
+                  [threading.Thread(target=writer) for _ in range(3)]
+        for t in threads: t.start()
+        time.sleep(0.5)
+        stop.set()
+        for t in threads: t.join()
+
+        self.assertFalse(
+            in_flight["race"],
+            "Concurrent modbus IO detected -- reads and writes must be serialized",
+        )

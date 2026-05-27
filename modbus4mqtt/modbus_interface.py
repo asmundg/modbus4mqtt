@@ -1,5 +1,6 @@
 from enum import Enum
 import logging
+import threading
 from queue import Queue
 from pymodbus.client import ModbusTcpClient, ModbusUdpClient, ModbusTlsClient
 from pymodbus.framer import FramerType
@@ -43,6 +44,14 @@ class modbus_interface:
         self._ip: str = ip
         self._port: int = port
 
+        # pymodbus's transaction layer is NOT thread-safe. The poll loop
+        # runs on the main thread while the paho-mqtt callback thread can
+        # invoke set_value() -> _perform_write() at any moment. A read
+        # response and a write response landing on the socket out of order
+        # permanently desyncs the transaction_id matching and every
+        # subsequent request fails with "No response received" until a
+        # full reconnect. Serialize every actual modbus IO call.
+        self._io_lock = threading.Lock()
         self._planned_writes: Queue = Queue()
         self._write_mode: WriteMode = write_mode
         self._unit: int = device_address
@@ -120,17 +129,18 @@ class modbus_interface:
         # old half-open sockets in CLOSE_WAIT until their own keepalive
         # times out, wedging the Modbus stack in the meantime.
         prev = getattr(self, "_mb", None)
-        if prev is not None:
-            try:
-                prev.close()
-            except Exception:
-                pass
+        with self._io_lock:
+            if prev is not None:
+                try:
+                    prev.close()
+                except Exception:
+                    pass
 
-        self._mb = client(
-            host=self._ip, port=self._port, framer=framer, retries=3, timeout=1
-        )
-        self._mb.connect()
-        return self._mb.connected
+            self._mb = client(
+                host=self._ip, port=self._port, framer=framer, retries=3, timeout=1
+            )
+            self._mb.connect()
+            return self._mb.connected
 
     def close(self):
         self._mb.close()
@@ -224,13 +234,16 @@ class modbus_interface:
         self._process_writes()
 
     def _perform_write(self, addr, values):
-        if self._write_mode == WriteMode.Single or len(values) == 1:
-            for i, value in enumerate(values):
-                self._mb.write_register(
-                    address=addr + i, value=value, device_id=self._unit
+        with self._io_lock:
+            if self._write_mode == WriteMode.Single or len(values) == 1:
+                for i, value in enumerate(values):
+                    self._mb.write_register(
+                        address=addr + i, value=value, device_id=self._unit
+                    )
+            else:
+                self._mb.write_registers(
+                    address=addr, values=values, device_id=self._unit
                 )
-        else:
-            self._mb.write_registers(address=addr, values=values, device_id=self._unit)
 
     def _process_writes(self):
         for start, length in self._tables["holding"].get_batched_addresses(
@@ -247,14 +260,15 @@ class modbus_interface:
 
     def _scan_value_range(self, table, start, count):
         result = None
-        if table == "input":
-            result = self._mb.read_input_registers(
-                address=start, count=count, device_id=self._unit
-            )
-        elif table == "holding":
-            result = self._mb.read_holding_registers(
-                address=start, count=count, device_id=self._unit
-            )
+        with self._io_lock:
+            if table == "input":
+                result = self._mb.read_input_registers(
+                    address=start, count=count, device_id=self._unit
+                )
+            elif table == "holding":
+                result = self._mb.read_holding_registers(
+                    address=start, count=count, device_id=self._unit
+                )
         if result is None:
             raise ModbusException("No result from modbus read.")
         if len(result.registers) != count:
