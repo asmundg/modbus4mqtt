@@ -97,3 +97,24 @@ def test_write_only_address_not_polled():
     write_batches = table.get_batched_addresses(write_mode=True)
     assert read_batches == [(1, 3)], "write-only address must not poison read batches"
     assert write_batches == [(99, 1)]
+
+
+def test_write_before_first_read_does_not_poison_read_cache():
+    # Regression: a retained MQTT /set message can arrive and flush through
+    # _process_writes -> get_batched_addresses(write_mode=True) BEFORE the
+    # first poll(). If the read/write distinction is collapsed in the cache,
+    # the next poll() will issue Read Holding Registers against the
+    # write-only address (12291 in the wild), which CG PLCs silently ignore
+    # and never recover from.
+    table = ModbusTable(8)
+    for addr in [1, 2, 3]:
+        table.add_register(addr)
+    # First call out of __init__ is the write flush, not a read.
+    table.set_value(12291, 1, write=True)
+    write_batches = table.get_batched_addresses(write_mode=True)
+    assert write_batches == [(12291, 1)]
+    # Now the first poll asks for read batches. Must NOT include 12291.
+    read_batches = table.get_batched_addresses()
+    assert read_batches == [(1, 3)], (
+        f"write-only address poisoned read batches: {read_batches}"
+    )
