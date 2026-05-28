@@ -30,19 +30,19 @@ class ModbusTable:
         self._registers = dict(sorted(self._registers.items()))
 
     def get_batched_addresses(self, write_mode: bool = False) -> list[tuple[int, int]]:
+        if write_mode:
+            # Write batches are not cached: they're cheap to recompute and
+            # always reflect _changed_registers only. The cache is reserved
+            # for the read scan so we don't accidentally poison polled
+            # addresses with write-only targets that arrive before the
+            # first poll (e.g. retained MQTT /set messages at startup).
+            if not self._changed_registers:
+                return []
+            return self._generate_batched_addresses(write_mode=True)
         if self._stale:
-            # If the number of registers has changed, we need to
-            # sort them again.
             self.sort()
             self._stale = False
-            self._batches = self._generate_batched_addresses(write_mode=write_mode)
-
-        if write_mode:
-            if self._changed_registers:
-                # The cached batches will not reflect what needs to be written.
-                return self._generate_batched_addresses(write_mode=write_mode)
-            else:
-                return []
+            self._batches = self._generate_batched_addresses(write_mode=False)
         return self._batches
 
     def _generate_batched_addresses(
