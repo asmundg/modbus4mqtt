@@ -118,3 +118,15 @@ def test_write_before_first_read_does_not_poison_read_cache():
     assert read_batches == [(1, 3)], (
         f"write-only address poisoned read batches: {read_batches}"
     )
+
+
+def test_repeated_write_of_same_value_is_flushed():
+    # A CG pulse register takes the same value on every write, and each write
+    # is a separate button tap. Dropping a write because it matches the last
+    # one turns every pulse after the first into a no-op.
+    table = ModbusTable(8)
+    table.set_value(12289, 1, write=True)
+    assert table.get_batched_addresses(write_mode=True) == [(12289, 1)]
+    table.clear_changed_registers()
+    table.set_value(12289, 1, write=True)
+    assert table.get_batched_addresses(write_mode=True) == [(12289, 1)]
