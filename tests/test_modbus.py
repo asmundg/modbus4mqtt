@@ -675,25 +675,6 @@ class ModbusTests(unittest.TestCase):
             # Read the value out as a different type.
             self.assertEqual(m.get_value("holding", 1, "int64"), -170869853354175)
 
-    def test_read_block_polls_gaps_in_one_read(self):
-        with patch("modbus4mqtt.modbus_interface.ModbusTcpClient") as mock_modbus:
-            mock_modbus().connect.side_effect = self.connect_success
-            mock_modbus().read_holding_registers.side_effect = (
-                self.read_holding_registers
-            )
-            m = modbus_interface.modbus_interface(
-                "1.1.1.1", read_batching=8, read_blocks=[(20, 40)]
-            )
-            m.connect()
-            m.add_monitor_register("holding", 22)
-            m.add_monitor_register("holding", 50)
-            m.poll()
-            self.assertEqual(m.get_value("holding", 22), 22)
-            self.assertEqual(m.get_value("holding", 50), 50)
-            mock_modbus().read_holding_registers.assert_called_once_with(
-                address=22, count=29, device_id=1
-            )
-
     def test_registers_poll_and_write_on_their_own_unit(self):
         with patch("modbus4mqtt.modbus_interface.ModbusTcpClient") as mock_modbus:
             mock_modbus().connect.side_effect = self.connect_success

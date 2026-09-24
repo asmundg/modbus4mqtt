@@ -40,7 +40,6 @@ class modbus_interface:
         read_batching: int = DEFAULT_READ_BATCHING,
         write_batching: int = DEFAULT_WRITE_BATCHING,
         word_order=WordOrder.HighLow,
-        read_blocks: list[tuple[int, int]] = [],
     ):
         self._ip: str = ip
         self._port: int = port
@@ -81,7 +80,6 @@ class modbus_interface:
         if self._write_mode == WriteMode.Single and self._write_batching != 1:
             logging.warning("Overriding write batching to 1 due to single write mode.")
             self._write_batching = 1
-        self._read_blocks = read_blocks
         self._tables: dict[str, ModbusTable] = self._new_tables()
         # Registers can name their own unit, so one connection reaches every
         # device behind a gateway. The default unit's tables are self._tables.
@@ -91,9 +89,7 @@ class modbus_interface:
 
     def _new_tables(self) -> dict[str, ModbusTable]:
         return {
-            name: ModbusTable(
-                self._read_batching, self._write_batching, self._read_blocks
-            )
+            name: ModbusTable(self._read_batching, self._write_batching)
             for name in ("input", "holding")
         }
 
@@ -187,9 +183,7 @@ class modbus_interface:
                 try:
                     values = self._scan_value_range(table, start, length, unit)
                     for offset, value in enumerate(values):
-                        # A read block spans addresses nobody monitors.
-                        if start + offset in tables[table]:
-                            tables[table].set_value(start + offset, value, write=False)
+                        tables[table].set_value(start + offset, value, write=False)
                 except ModbusException as e:
                     msg = str(e)
                     # pymodbus declares the underlying connection dead via

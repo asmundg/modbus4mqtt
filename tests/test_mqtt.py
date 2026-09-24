@@ -760,7 +760,6 @@ class MQTTTests(unittest.TestCase):
             read_batching=None,
             write_batching=None,
             word_order=word_order,
-            read_blocks=[],
         )
 
     def test_word_order_setting(self):

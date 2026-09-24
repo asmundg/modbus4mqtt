@@ -1,18 +1,7 @@
 class ModbusTable:
 
-    def __init__(
-        self,
-        read_batch_size: int = 100,
-        write_batch_size: int = 0,
-        read_blocks: list[tuple[int, int]] = [],
-    ):
+    def __init__(self, read_batch_size: int = 100, write_batch_size: int = 0):
         self._registers: dict[int, int] = {}
-        # (start, count) address ranges the device reads in one request. The
-        # monitored registers inside a block are fetched together, gaps
-        # included, so a sparse block costs one read. Ranges outside every
-        # block batch contiguously, since reading across the device's range
-        # boundaries can fail.
-        self._read_blocks = read_blocks
         # Subset of self._registers that we actually poll. Write-only
         # addresses (e.g. CG-style controllers with disjoint read/write
         # address spaces) land in self._registers via set_value but must
@@ -64,17 +53,6 @@ class ModbusTable:
         # If "write_mode" is true, the returned lists will only include
         # registers that've changed since the last read operation.
         result: list[tuple[int, int]] = []
-        in_block: set[int] = set()
-        if not write_mode:
-            for block_start, block_count in self._read_blocks:
-                addrs = [
-                    a
-                    for a in self._monitored
-                    if block_start <= a < block_start + block_count
-                ]
-                if addrs:
-                    result.append((min(addrs), max(addrs) - min(addrs) + 1))
-                    in_block.update(addrs)
         current_batch_start: int = -1
         current_batch_size: int = 0
         previous_addr = None
@@ -87,7 +65,7 @@ class ModbusTable:
                 if addr not in self._changed_registers:
                     continue
             else:
-                if addr not in self._monitored or addr in in_block:
+                if addr not in self._monitored:
                     continue
             if current_batch_size >= max_batch_size or (
                 previous_addr is not None and addr != previous_addr + 1
@@ -103,7 +81,7 @@ class ModbusTable:
         # Don't forget to add the last batch
         if current_batch_start != -1:
             result.append((current_batch_start, current_batch_size))
-        return sorted(result)
+        return result
 
     def clear_changed_registers(self):
         self._changed_registers = set()

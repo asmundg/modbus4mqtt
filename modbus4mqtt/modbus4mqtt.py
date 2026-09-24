@@ -103,10 +103,6 @@ class mqtt_interface:
             ),
             write_batching=self.config.get("write_batching", None),
             word_order=word_order,
-            read_blocks=[
-                (block["start"], block["count"])
-                for block in self.config.get("read_blocks", [])
-            ],
         )
         # Tells the modbus interface about the registers we consider interesting.
         for register in self.registers:
