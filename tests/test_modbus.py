@@ -47,6 +47,13 @@ class ModbusTests(unittest.TestCase):
             registers=self.holding_registers.registers[address : address + count]
         )
 
+    def read_holding_registers_by_unit(self, address, count, device_id):
+        # Unit n answers with n * 1000 + address, so a read from the wrong
+        # unit is visible in the value.
+        return self.modbusRegister(
+            registers=[device_id * 1000 + a for a in range(address, address + count)]
+        )
+
     def write_holding_register(self, address, value, device_id):
         self.holding_registers.registers[address] = value
 
@@ -668,6 +675,44 @@ class ModbusTests(unittest.TestCase):
             # Read the value out as a different type.
             self.assertEqual(m.get_value("holding", 1, "int64"), -170869853354175)
 
+    def test_read_block_polls_gaps_in_one_read(self):
+        with patch("modbus4mqtt.modbus_interface.ModbusTcpClient") as mock_modbus:
+            mock_modbus().connect.side_effect = self.connect_success
+            mock_modbus().read_holding_registers.side_effect = (
+                self.read_holding_registers
+            )
+            m = modbus_interface.modbus_interface(
+                "1.1.1.1", read_batching=8, read_blocks=[(20, 40)]
+            )
+            m.connect()
+            m.add_monitor_register("holding", 22)
+            m.add_monitor_register("holding", 50)
+            m.poll()
+            self.assertEqual(m.get_value("holding", 22), 22)
+            self.assertEqual(m.get_value("holding", 50), 50)
+            mock_modbus().read_holding_registers.assert_called_once_with(
+                address=22, count=29, device_id=1
+            )
+
+    def test_registers_poll_and_write_on_their_own_unit(self):
+        with patch("modbus4mqtt.modbus_interface.ModbusTcpClient") as mock_modbus:
+            mock_modbus().connect.side_effect = self.connect_success
+            mock_modbus().read_holding_registers.side_effect = (
+                self.read_holding_registers_by_unit
+            )
+            m = modbus_interface.modbus_interface("1.1.1.1")
+            m.connect()
+            m.add_monitor_register("holding", 17)
+            m.add_monitor_register("holding", 17, unit=2)
+            m.poll()
+            self.assertEqual(m.get_value("holding", 17), 1017)
+            self.assertEqual(m.get_value("holding", 17, unit=2), 2017)
+
+            m.set_value("holding", 4096, 32, unit=2)
+            mock_modbus().write_register.assert_called_once_with(
+                address=4096, value=32, device_id=2
+            )
+
 
 class ModbusThreadSafetyTests(unittest.TestCase):
     """pymodbus 3.x's transaction layer is single-threaded. The MQTT
@@ -696,9 +741,13 @@ class ModbusThreadSafetyTests(unittest.TestCase):
             time.sleep(0.01)
             with in_flight_lock:
                 in_flight["count"] -= 1
+
             class R:
                 registers = [0, 0]
-                def isError(self): return False
+
+                def isError(self):
+                    return False
+
             return R()
 
         mi._mb = Mock()
@@ -710,23 +759,26 @@ class ModbusThreadSafetyTests(unittest.TestCase):
         def reader():
             while not stop.is_set():
                 try:
-                    mi._scan_value_range("holding", 0, 2)
+                    mi._scan_value_range("holding", 0, 2, 1)
                 except Exception:
                     pass
 
         def writer():
             while not stop.is_set():
                 try:
-                    mi._perform_write(0, [42])
+                    mi._perform_write(0, [42], 1)
                 except Exception:
                     pass
 
-        threads = [threading.Thread(target=reader) for _ in range(3)] + \
-                  [threading.Thread(target=writer) for _ in range(3)]
-        for t in threads: t.start()
+        threads = [threading.Thread(target=reader) for _ in range(3)] + [
+            threading.Thread(target=writer) for _ in range(3)
+        ]
+        for t in threads:
+            t.start()
         time.sleep(0.5)
         stop.set()
-        for t in threads: t.join()
+        for t in threads:
+            t.join()
 
         self.assertFalse(
             in_flight["race"],

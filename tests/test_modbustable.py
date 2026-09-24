@@ -115,6 +115,23 @@ def test_write_before_first_read_does_not_poison_read_cache():
     assert write_batches == [(12291, 1)]
     # Now the first poll asks for read batches. Must NOT include 12291.
     read_batches = table.get_batched_addresses()
-    assert read_batches == [(1, 3)], (
-        f"write-only address poisoned read batches: {read_batches}"
-    )
+    assert read_batches == [
+        (1, 3)
+    ], f"write-only address poisoned read batches: {read_batches}"
+
+
+def test_read_blocks_span_gaps():
+    # Registers inside a read block are fetched in one read covering the
+    # first to the last monitored address, gaps included. Registers outside
+    # every block batch as usual.
+    table = ModbusTable(8, read_blocks=[(256, 104)])
+    for addr in [16, 17, 270, 282, 350, 400]:
+        table.add_register(addr)
+    assert table.get_batched_addresses() == [(16, 2), (270, 81), (400, 1)]
+
+
+def test_read_blocks_do_not_merge_across_blocks():
+    table = ModbusTable(8, read_blocks=[(0, 8), (16, 8)])
+    for addr in [0, 3, 17, 23]:
+        table.add_register(addr)
+    assert table.get_batched_addresses() == [(0, 4), (17, 7)]

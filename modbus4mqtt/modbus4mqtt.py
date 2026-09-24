@@ -103,15 +103,20 @@ class mqtt_interface:
             ),
             write_batching=self.config.get("write_batching", None),
             word_order=word_order,
+            read_blocks=[
+                (block["start"], block["count"])
+                for block in self.config.get("read_blocks", [])
+            ],
         )
         # Tells the modbus interface about the registers we consider interesting.
         for register in self.registers:
-            monitor = register.get('monitor', True)
+            monitor = register.get("monitor", True)
             if monitor:
                 self._mb.add_monitor_register(
                     register.get("table", "holding"),
                     register["address"],
                     register.get("type", "uint16"),
+                    register.get("unit"),
                 )
             register["value"] = None
 
@@ -200,6 +205,7 @@ class mqtt_interface:
                     register.get("table", "holding"),
                     register["address"],
                     register.get("type", "uint16"),
+                    register.get("unit"),
                 )
             except Exception:
                 logging.warning(
@@ -365,6 +371,7 @@ class mqtt_interface:
                 int(value),
                 register.get("mask", 0xFFFF),
                 type,
+                register.get("unit"),
             )
 
     # This throws ValueError exceptions if the imported registers are invalid
