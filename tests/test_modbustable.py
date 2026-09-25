@@ -118,3 +118,24 @@ def test_write_before_first_read_does_not_poison_read_cache():
     assert read_batches == [(1, 3)], (
         f"write-only address poisoned read batches: {read_batches}"
     )
+
+
+def test_repeated_write_to_unpolled_register_is_flushed():
+    # The bridge never reads an unpolled register back, so it cannot know the
+    # write is redundant. A CG pulse register also acts on every write.
+    table = ModbusTable(8)
+    table.set_value(12289, 1, write=True)
+    assert table.get_batched_addresses(write_mode=True) == [(12289, 1)]
+    table.clear_changed_registers()
+    table.set_value(12289, 1, write=True)
+    assert table.get_batched_addresses(write_mode=True) == [(12289, 1)]
+
+
+def test_write_matching_polled_value_is_skipped():
+    table = ModbusTable(8)
+    table.add_register(5)
+    table.set_value(5, 7)
+    table.set_value(5, 7, write=True)
+    assert table.get_batched_addresses(write_mode=True) == []
+    table.set_value(5, 8, write=True)
+    assert table.get_batched_addresses(write_mode=True) == [(5, 1)]
