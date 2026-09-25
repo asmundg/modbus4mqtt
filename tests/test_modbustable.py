@@ -120,13 +120,22 @@ def test_write_before_first_read_does_not_poison_read_cache():
     )
 
 
-def test_repeated_write_of_same_value_is_flushed():
-    # A CG pulse register takes the same value on every write, and each write
-    # is a separate button tap. Dropping a write because it matches the last
-    # one turns every pulse after the first into a no-op.
+def test_repeated_write_to_unpolled_register_is_flushed():
+    # The bridge never reads an unpolled register back, so it cannot know the
+    # write is redundant. A CG pulse register also acts on every write.
     table = ModbusTable(8)
     table.set_value(12289, 1, write=True)
     assert table.get_batched_addresses(write_mode=True) == [(12289, 1)]
     table.clear_changed_registers()
     table.set_value(12289, 1, write=True)
     assert table.get_batched_addresses(write_mode=True) == [(12289, 1)]
+
+
+def test_write_matching_polled_value_is_skipped():
+    table = ModbusTable(8)
+    table.add_register(5)
+    table.set_value(5, 7)
+    table.set_value(5, 7, write=True)
+    assert table.get_batched_addresses(write_mode=True) == []
+    table.set_value(5, 8, write=True)
+    assert table.get_batched_addresses(write_mode=True) == [(5, 1)]

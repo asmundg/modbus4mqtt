@@ -100,7 +100,12 @@ class ModbusTable:
             raise ValueError("Value {} out of range for modbus register.".format(value))
         new_value = self._registers[addr] & (~mask) | (value & mask)
         if write:
-            self._changed_registers.add(addr)
+            # A polled register's cache is the device's last observed value, so
+            # an equal write is redundant. An unpolled register's cache is only
+            # our last write, which may be stale or a command register that
+            # acts on every write, so always send it.
+            if new_value != self._registers[addr] or addr not in self._monitored:
+                self._changed_registers.add(addr)
         self._registers[addr] = new_value
 
     def get_value(self, addr: int) -> int:
